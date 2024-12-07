@@ -1,0 +1,60 @@
+name: CI Windows (MSVC)
+
+on:
+  push:
+  pull_request:
+  repository_dispatch:
+    types: [run_build]
+
+permissions:
+  contents: read
+
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
+# These jobs run smoke tests to ensure that MSVC-specific builds work properly.
+jobs:
+
+  msvc:
+    runs-on: windows-2022
+    strategy:
+      matrix:
+        version: [2022]
+        configuration: [Debug, Release]
+        platform: [x64, arm64]  # Add arm64 platform here
+        exclude:
+          - version: UWP
+            configuration: Debug
+        include:
+          - version: UWP
+            configuration: ReleaseAngle
+            platform: x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add msbuild to PATH
+        uses: microsoft/setup-msbuild@v1
+
+      - name: Configure msvc
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: ${{ matrix.platform }}  # Use matrix.platform (x64 or arm64) here
+
+      - name: Compile RA
+        working-directory: "${{github.workspace}}/pkg/msvc${{ matrix.version == 'UWP' && '-uwp' || ''}}"
+        run: |
+          msbuild -p:"Configuration=${{matrix.configuration}}" -p:"Platform=${{matrix.platform}}" .\RetroArch-msvc${{matrix.version}}.sln
+
+      - name: Get short SHA
+        id: slug
+        shell: powershell
+        run: echo "sha8=$('${{github.sha}}'.Substring(0,8))"  >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retroarch-${{matrix.version}}-${{matrix.configuration}}-${{matrix.platform}}-${{ steps.slug.outputs.sha8 }}
+          path: |
+            ${{ matrix.version != 'UWP' }}:
+              pkg/msvc/${{matrix.platform}}/${{matrix.configuration}}/RetroArch-msvc${{matrix.version}}.exe
+            ${{ matrix.version == 'UWP' }}:
+              pkg/msvc-uwp/AppPackages/RetroArch-msvcUWP
